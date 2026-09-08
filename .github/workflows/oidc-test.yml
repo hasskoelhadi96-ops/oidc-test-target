@@ -1,0 +1,42 @@
+name: OIDC Token Test (pull_request_target)
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  oidc-test:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Get OIDC Token
+        id: oidc
+        run: |
+          OIDC_TOKEN=$(curl -sSL \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['value'])")
+          
+          # Decode claims (middle part of JWT)
+          CLAIMS=$(echo "$OIDC_TOKEN" | cut -d'.' -f2 | python3 -c "
+import sys,json,base64
+data = sys.stdin.read().strip()
+padded = data + '=' * (4 - len(data) % 4)
+decoded = base64.urlsafe_b64decode(padded)
+claims = json.loads(decoded)
+print(json.dumps(claims, indent=2))
+")
+          echo "=== OIDC TOKEN CLAIMS ==="
+          echo "$CLAIMS"
+          echo "========================="
+          
+      - name: Show trigger context
+        run: |
+          echo "github.actor: ${{ github.actor }}"
+          echo "github.event_name: ${{ github.event_name }}"
+          echo "github.ref: ${{ github.ref }}"
+          echo "github.repository: ${{ github.repository }}"
+          echo "github.event.pull_request.head.repo.full_name: ${{ github.event.pull_request.head.repo.full_name }}"
