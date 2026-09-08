@@ -1,5 +1,5 @@
 # OIDC Test Target
 
-Test repository for OIDC token claim testing.
+Testing OIDC claims for pull_request_target.
 
-Synchronize commit to trigger pull_request_target.
+Trigger #3
