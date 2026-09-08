@@ -1,38 +1,29 @@
-name: OIDC Token Test (pull_request_target)
+name: OIDC PR Target Test
 on:
   pull_request_target:
     types: [opened, synchronize, reopened]
-
 permissions:
   id-token: write
   contents: read
-
 jobs:
   oidc-test:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Get OIDC Token
-        id: oidc
+      - name: Get OIDC Token and show sub claim
+        env:
+          AUDIENCE: sts.amazonaws.com
         run: |
-          OIDC_TOKEN=$(curl -sSL \
-            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
-            | jq -r .value)
-          CLAIMS=$(echo "$OIDC_TOKEN" | cut -d'.' -f2 | python3 -c "
-import sys,json,base64
-data = sys.stdin.read().strip()
-padded = data + '=' * (4 - len(data) % 4)
-decoded = base64.urlsafe_b64decode(padded)
-claims = json.loads(decoded)
-print(json.dumps(claims, indent=2))
-")
-          echo "=== OIDC TOKEN CLAIMS ==="
-          echo "$CLAIMS"
-      - name: Show trigger context
+          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$AUDIENCE" | jq -r .value)
+          PAYLOAD=$(echo "$TOKEN" | cut -d. -f2)
+          # Pad base64
+          PADDED="${PAYLOAD}$(python3 -c 'import sys; n=len(sys.argv[1])%4; print("="*(4-n) if n else "")' "$PAYLOAD")"
+          echo "=== OIDC Claims ==="
+          echo "$PADDED" | base64 -d 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "$PADDED" | python3 -c "import sys,base64,json; d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4); print(json.dumps(json.loads(base64.urlsafe_b64decode(p)),indent=2))"
+      - name: Show PR context
         run: |
-          echo "github.actor: ${{ github.actor }}"
-          echo "github.event_name: ${{ github.event_name }}"
-          echo "github.ref: ${{ github.ref }}"
-          echo "github.repository: ${{ github.repository }}"
-          echo "github.event.pull_request.head.repo.full_name: ${{ github.event.pull_request.head.repo.full_name }}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Head repo: ${{ github.event.pull_request.head.repo.full_name }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "SHA: ${{ github.sha }}"
