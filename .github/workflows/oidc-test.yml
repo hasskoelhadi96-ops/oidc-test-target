@@ -1,7 +1,7 @@
 name: OIDC Token Test (pull_request_target)
 on:
   pull_request_target:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened]
 
 permissions:
   id-token: write
@@ -18,9 +18,7 @@ jobs:
           OIDC_TOKEN=$(curl -sSL \
             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
-            | python3 -c "import json,sys; print(json.load(sys.stdin)['value'])")
-          
-          # Decode claims (middle part of JWT)
+            | jq -r .value)
           CLAIMS=$(echo "$OIDC_TOKEN" | cut -d'.' -f2 | python3 -c "
 import sys,json,base64
 data = sys.stdin.read().strip()
@@ -31,8 +29,6 @@ print(json.dumps(claims, indent=2))
 ")
           echo "=== OIDC TOKEN CLAIMS ==="
           echo "$CLAIMS"
-          echo "========================="
-          
       - name: Show trigger context
         run: |
           echo "github.actor: ${{ github.actor }}"
