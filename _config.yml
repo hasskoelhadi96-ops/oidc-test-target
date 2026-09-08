@@ -1,0 +1,8 @@
+title: OIDC Test Target
+theme: minima
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+
+# Test: data files from URL (some Jekyll plugins support this)
+# Test: SASS imports with @import url()
