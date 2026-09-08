@@ -1,5 +1,3 @@
 # OIDC Test Target
 
-Testing OIDC claims for pull_request_target.
-
-Trigger #3
+Default sub claim test - trigger #4
