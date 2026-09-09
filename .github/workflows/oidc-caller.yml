@@ -1,0 +1,11 @@
+name: OIDC Workflow Call Test
+on:
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  call-reusable:
+    uses: hasskoelhadi96-ops/oidc-test-target/.github/workflows/oidc-reusable.yml@main
+    with:
+      caller_event: workflow_dispatch
