@@ -1,0 +1,12 @@
+name: PR Trigger (fork context)
+on:
+  pull_request:
+    types: [opened, synchronize]
+permissions:
+  contents: read
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Fork PR trigger - this fires workflow_run in base repo"
+
