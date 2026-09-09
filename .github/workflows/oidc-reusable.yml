@@ -1,0 +1,21 @@
+name: Reusable OIDC Inspector
+on:
+  workflow_call:
+    inputs:
+      caller_event:
+        required: false
+        type: string
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  oidc-reusable:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Get OIDC in reusable workflow
+        run: |
+          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          PAYLOAD=$(echo "$TOKEN" | cut -d. -f2)
+          echo "=== OIDC in workflow_call context ==="
+          echo "$PAYLOAD" | python3 -c "import sys,base64,json; d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4); print(json.dumps(json.loads(base64.urlsafe_b64decode(p)),indent=2))"
