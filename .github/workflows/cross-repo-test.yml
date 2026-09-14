@@ -1,0 +1,47 @@
+name: Cross-Repo Token Test
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  cross-repo-test:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Test cross-org repo access with GITHUB_TOKEN
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=== Testing GITHUB_TOKEN cross-repo access ==="
+          echo "Current repo: $GITHUB_REPOSITORY"
+          
+          # Try to list the private companion repo's contents
+          RESULT=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/hasskoelhadi96-ops/oidc-test-private-companion/contents/")
+          echo "Access to private companion repo: HTTP $RESULT"
+          
+          # Try to list org repos
+          RESULT2=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/orgs/hasskoelhadi96-ops/repos")
+          echo "Access to org repos list: HTTP $RESULT2"
+          
+          # Try to read org secrets list
+          RESULT3=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/orgs/hasskoelhadi96-ops/actions/secrets")
+          echo "Access to org secrets list: HTTP $RESULT3"
+          
+          # Get the actual token info
+          curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/rate_limit" | jq '.resources.core | {limit, remaining}'
+      
+      - name: Upload cross-repo test results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-repo-test-results
+          path: /dev/null
+          retention-days: 1
