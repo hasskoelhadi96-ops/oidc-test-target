@@ -1,12 +1,11 @@
 name: PR Trigger (fork context)
 on:
   pull_request:
-    types: [opened, synchronize]
+    branches: [main]
 permissions:
   contents: read
 jobs:
-  trigger:
+  pr-trigger:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Fork PR trigger - this fires workflow_run in base repo"
-
+      - run: echo "fork PR trigger #7 - custom_branch_policies env bypass test"
