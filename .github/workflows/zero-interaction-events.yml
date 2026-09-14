@@ -5,6 +5,10 @@ on:
   fork:
   discussion_comment:
     types: [created]
+  issues:
+    types: [opened]
+  pull_request_review_comment:
+    types: [created]
 permissions:
   id-token: write
   contents: read
@@ -24,4 +28,3 @@ jobs:
           if [ -n "$RESTRICTED_SECRET" ]; then echo "ZERO_INTERACTION_SECRET_ACCESSIBLE!"; else echo "BLOCKED"; fi
         env:
           RESTRICTED_SECRET: ${{ secrets.RESTRICTED_SECRET }}
-
