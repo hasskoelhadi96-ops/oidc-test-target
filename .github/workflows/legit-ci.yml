@@ -1,0 +1,29 @@
+name: Legitimate CI (cache restore test)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore cache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/build-cache
+          key: build-deps-main-
+          restore-keys: |
+            build-deps-main-
+      - name: Check cache content
+        run: |
+          if [ -f /tmp/build-cache ]; then
+            echo "CACHE RESTORED:"
+            cat /tmp/build-cache
+          elif ls /tmp/oidc_token.txt 2>/dev/null; then
+            echo "OIDC TOKEN IN CACHE:"
+            cat /tmp/oidc_token.txt
+          else
+            echo "No cache found"
+            ls /tmp/ | head -20
+          fi
+

