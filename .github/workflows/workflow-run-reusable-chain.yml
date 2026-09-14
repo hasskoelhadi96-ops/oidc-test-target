@@ -1,0 +1,14 @@
+name: workflow_run calls reusable (job_workflow_ref test)
+on:
+  workflow_run:
+    workflows: ["PR Trigger (fork context)"]
+    types: [completed]
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  call-reusable:
+    uses: hasskoelhadi96-ops/oidc-test-target/.github/workflows/oidc-reusable.yml@main
+    with:
+      caller_event: "workflow_run_chain_test"
+    secrets: inherit
