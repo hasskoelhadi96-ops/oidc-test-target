@@ -1,0 +1,37 @@
+name: Cleanup attacker package
+on:
+  workflow_dispatch:
+permissions:
+  packages: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete attacker-injected image tag via API
+        run: |
+          # List versions to find the attacker-injected one
+          VERSIONS=$(curl -s "https://api.github.com/users/hasskoelhadi96-ops/packages/container/oidc-test-target/versions?per_page=20" \
+            -H "Authorization: token ${{ github.token }}")
+          echo "$VERSIONS" | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          if isinstance(data, list):
+              for v in data:
+                  tags = v.get('metadata',{}).get('container',{}).get('tags',[])
+                  print(f'id:{v[\"id\"]} tags:{tags}')
+          "
+          VERSION_ID=$(echo "$VERSIONS" | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          if isinstance(data, list):
+              for v in data:
+                  tags = v.get('metadata',{}).get('container',{}).get('tags',[])
+                  if 'attacker-injected' in tags:
+                      print(v['id'])
+                      break
+          ")
+          echo "Deleting version ID: $VERSION_ID"
+          if [ -n "$VERSION_ID" ]; then
+            curl -s -X DELETE "https://api.github.com/users/hasskoelhadi96-ops/packages/container/oidc-test-target/versions/$VERSION_ID" \
+              -H "Authorization: token ${{ github.token }}" -w "HTTP %{http_code}"
+          fi
