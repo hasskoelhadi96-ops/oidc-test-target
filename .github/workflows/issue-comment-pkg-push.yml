@@ -1,0 +1,36 @@
+name: issue_comment packages write test
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  packages: write
+  contents: read
+  id-token: write
+jobs:
+  pkg-push-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show context
+        run: |
+          echo "actor: $GITHUB_ACTOR"
+          echo "event: $GITHUB_EVENT_NAME"
+          echo "ref: $GITHUB_REF"
+      - name: Login to GitHub Container Registry using GITHUB_TOKEN
+        run: |
+          echo "${{ github.token }}" | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin
+          echo "Docker login status: $?"
+      - name: Build and push attacker-controlled image
+        run: |
+          # Create a minimal malicious image label
+          mkdir -p /tmp/fakepkg
+          cat > /tmp/fakepkg/Dockerfile << 'DOCKERFILE'
+          FROM scratch
+          LABEL maintainer="attacker" security="compromised-via-issue-comment"
+          DOCKERFILE
+          docker build -t ghcr.io/hasskoelhadi96-ops/oidc-test-target:attacker-injected /tmp/fakepkg/ || true
+          docker push ghcr.io/hasskoelhadi96-ops/oidc-test-target:attacker-injected || true
+          echo "Push attempt complete"
+      - name: Check package list
+        run: |
+          curl -s "https://api.github.com/users/hasskoelhadi96-ops/packages/container/oidc-test-target/versions?per_page=5" \
+            -H "Authorization: token ${{ github.token }}" | jq '[.[]? | {id:.id, name:.name, created:.created_at}]'
